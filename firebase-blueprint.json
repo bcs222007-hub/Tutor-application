@@ -1,0 +1,301 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Authenticated user profile in the tutoring platform",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "format": "email", "maxLength": 150 },
+        "role": { "type": "string", "enum": ["admin", "tutor", "student", "parent"] },
+        "phone": { "type": "string", "maxLength": 30 },
+        "avatarUrl": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "name", "email", "role"]
+    },
+    "Tutor": {
+      "title": "Tutor",
+      "description": "Registered faculty mentor profile with qualifications and verification status",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "format": "email", "maxLength": 150 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "cnic": { "type": "string", "maxLength": 25 },
+        "photoUrl": { "type": "string", "maxLength": 500 },
+        "qualification": { "type": "string", "maxLength": 200 },
+        "institution": { "type": "string", "maxLength": 200 },
+        "experienceYears": { "type": "number" },
+        "subjects": { "type": "array" },
+        "levels": { "type": "array" },
+        "mode": { "type": "string", "enum": ["Online", "Home Tuition", "Both"] },
+        "hourlyRatePKR": { "type": "number" },
+        "monthlyRatePKR": { "type": "number" },
+        "city": { "type": "string", "maxLength": 100 },
+        "areasCovered": { "type": "array" },
+        "rating": { "type": "number" },
+        "reviewCount": { "type": "number" },
+        "verificationStatus": { "type": "string", "enum": ["verified", "pending", "rejected", "blocked"] },
+        "bio": { "type": "string", "maxLength": 2000 },
+        "teachingMethodology": { "type": "string", "maxLength": 2000 },
+        "availability": { "type": "array" },
+        "pastResultsHighlights": { "type": "string", "maxLength": 1000 },
+        "badge": { "type": "string", "maxLength": 100 }
+      },
+      "required": ["id", "name", "email", "qualification", "verificationStatus"]
+    },
+    "Student": {
+      "title": "Student",
+      "description": "Student academic profile and enrolled classes",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "format": "email", "maxLength": 150 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "avatarUrl": { "type": "string", "maxLength": 500 },
+        "currentLevel": { "type": "string", "maxLength": 50 },
+        "enrolledSubjects": { "type": "array" },
+        "assignedTutorIds": { "type": "array" },
+        "parentId": { "type": "string", "maxLength": 128 },
+        "parentName": { "type": "string", "maxLength": 100 },
+        "parentPhone": { "type": "string", "maxLength": 30 },
+        "schoolCollege": { "type": "string", "maxLength": 200 },
+        "targetExamYear": { "type": "string", "maxLength": 100 }
+      },
+      "required": ["id", "name", "email", "currentLevel"]
+    },
+    "DemoRequest": {
+      "title": "DemoRequest",
+      "description": "Free trial demo class inquiry submitted by student or parent",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 100 },
+        "parentName": { "type": "string", "maxLength": 100 },
+        "contactNumber": { "type": "string", "maxLength": 30 },
+        "email": { "type": "string", "format": "email", "maxLength": 150 },
+        "subject": { "type": "string", "maxLength": 50 },
+        "level": { "type": "string", "maxLength": 50 },
+        "tuitionMode": { "type": "string", "enum": ["Online", "Home Tuition"] },
+        "preferredTutorId": { "type": "string", "maxLength": 128 },
+        "preferredTutorName": { "type": "string", "maxLength": 100 },
+        "preferredDate": { "type": "string", "maxLength": 30 },
+        "preferredTime": { "type": "string", "maxLength": 30 },
+        "cityArea": { "type": "string", "maxLength": 150 },
+        "additionalMessage": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["pending", "confirmed", "completed", "cancelled"] },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "studentName", "contactNumber", "subject", "level", "status"]
+    },
+    "Course": {
+      "title": "Course",
+      "description": "Curriculum course syllabus offering",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 200 },
+        "subject": { "type": "string", "maxLength": 50 },
+        "level": { "type": "string", "maxLength": 50 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "tutorId": { "type": "string", "maxLength": 128 },
+        "tutorName": { "type": "string", "maxLength": 100 },
+        "durationWeeks": { "type": "number" },
+        "totalClasses": { "type": "number" },
+        "mode": { "type": "string", "maxLength": 50 },
+        "feePKR": { "type": "number" },
+        "syllabusTopics": { "type": "array" },
+        "learningOutcomes": { "type": "array" },
+        "scheduleDayTime": { "type": "string", "maxLength": 150 },
+        "enrolledStudentsCount": { "type": "number" },
+        "badgeText": { "type": "string", "maxLength": 100 }
+      },
+      "required": ["id", "title", "subject", "level"]
+    },
+    "ScheduledClass": {
+      "title": "ScheduledClass",
+      "description": "Upcoming or completed tutoring session",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "courseTitle": { "type": "string", "maxLength": 200 },
+        "subject": { "type": "string", "maxLength": 50 },
+        "level": { "type": "string", "maxLength": 50 },
+        "tutorId": { "type": "string", "maxLength": 128 },
+        "tutorName": { "type": "string", "maxLength": 100 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 100 },
+        "date": { "type": "string", "maxLength": 30 },
+        "time": { "type": "string", "maxLength": 30 },
+        "durationMinutes": { "type": "number" },
+        "mode": { "type": "string", "enum": ["Online", "Home Tuition"] },
+        "meetingLink": { "type": "string", "maxLength": 500 },
+        "homeAddress": { "type": "string", "maxLength": 300 },
+        "status": { "type": "string", "enum": ["upcoming", "completed", "cancelled"] }
+      },
+      "required": ["id", "subject", "tutorId", "studentId", "date", "status"]
+    },
+    "AttendanceRecord": {
+      "title": "AttendanceRecord",
+      "description": "Student attendance log verified by faculty",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 100 },
+        "subject": { "type": "string", "maxLength": 50 },
+        "date": { "type": "string", "maxLength": 30 },
+        "status": { "type": "string", "enum": ["present", "absent", "leave"] },
+        "topicCovered": { "type": "string", "maxLength": 300 },
+        "tutorRemark": { "type": "string", "maxLength": 500 }
+      },
+      "required": ["id", "studentId", "subject", "date", "status"]
+    },
+    "Assignment": {
+      "title": "Assignment",
+      "description": "Homework sheet and student submission tracking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 200 },
+        "subject": { "type": "string", "maxLength": 50 },
+        "level": { "type": "string", "maxLength": 50 },
+        "tutorId": { "type": "string", "maxLength": 128 },
+        "tutorName": { "type": "string", "maxLength": 100 },
+        "dueDate": { "type": "string", "maxLength": 30 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "totalMarks": { "type": "number" },
+        "attachmentName": { "type": "string", "maxLength": 200 },
+        "submissions": { "type": "array" }
+      },
+      "required": ["id", "title", "subject", "tutorId", "dueDate"]
+    },
+    "TestResult": {
+      "title": "TestResult",
+      "description": "Monthly exam and diagnostic test score record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "testTitle": { "type": "string", "maxLength": 200 },
+        "subject": { "type": "string", "maxLength": 50 },
+        "level": { "type": "string", "maxLength": 50 },
+        "date": { "type": "string", "maxLength": 30 },
+        "totalMarks": { "type": "number" },
+        "obtainedMarks": { "type": "number" },
+        "grade": { "type": "string", "enum": ["A*", "A", "B", "C", "D", "U"] },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 100 },
+        "tutorName": { "type": "string", "maxLength": 100 },
+        "remarks": { "type": "string", "maxLength": 1000 }
+      },
+      "required": ["id", "testTitle", "subject", "studentId", "grade"]
+    },
+    "PaymentRecord": {
+      "title": "PaymentRecord",
+      "description": "Monthly tuition fee invoice and settlement",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "invoiceNumber": { "type": "string", "maxLength": 50 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 100 },
+        "parentName": { "type": "string", "maxLength": 100 },
+        "month": { "type": "string", "maxLength": 50 },
+        "amountPKR": { "type": "number" },
+        "paidAmountPKR": { "type": "number" },
+        "status": { "type": "string", "enum": ["paid", "pending", "overdue"] },
+        "dueDate": { "type": "string", "maxLength": 30 },
+        "paidDate": { "type": "string", "maxLength": 30 },
+        "paymentMethod": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "invoiceNumber", "studentId", "amountPKR", "status"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Direct message between students, tutors, parents and academy",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "senderId": { "type": "string", "maxLength": 128 },
+        "senderName": { "type": "string", "maxLength": 100 },
+        "senderRole": { "type": "string", "maxLength": 30 },
+        "recipientId": { "type": "string", "maxLength": 128 },
+        "recipientName": { "type": "string", "maxLength": 100 },
+        "content": { "type": "string", "maxLength": 3000 },
+        "timestamp": { "type": "string", "maxLength": 50 },
+        "isRead": { "type": "boolean" }
+      },
+      "required": ["id", "senderId", "recipientId", "content", "timestamp"]
+    },
+    "AppNotification": {
+      "title": "AppNotification",
+      "description": "System event notification for demo, class, or test result",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "recipientRole": { "type": "string", "maxLength": 30 },
+        "recipientId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 150 },
+        "message": { "type": "string", "maxLength": 1000 },
+        "type": { "type": "string", "maxLength": 50 },
+        "timestamp": { "type": "string", "maxLength": 50 },
+        "isRead": { "type": "boolean" }
+      },
+      "required": ["id", "title", "message", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles indexed by UID"
+    },
+    "/tutors/{tutorId}": {
+      "schema": { "$ref": "#/entities/Tutor" },
+      "description": "Faculty directory and tutor applicant records"
+    },
+    "/students/{studentId}": {
+      "schema": { "$ref": "#/entities/Student" },
+      "description": "Student candidate records"
+    },
+    "/courses/{courseId}": {
+      "schema": { "$ref": "#/entities/Course" },
+      "description": "Academic course syllabus definitions"
+    },
+    "/demoRequests/{demoId}": {
+      "schema": { "$ref": "#/entities/DemoRequest" },
+      "description": "Free demo lesson booking submissions"
+    },
+    "/scheduledClasses/{classId}": {
+      "schema": { "$ref": "#/entities/ScheduledClass" },
+      "description": "Scheduled live classes and home sessions"
+    },
+    "/attendance/{attendanceId}": {
+      "schema": { "$ref": "#/entities/AttendanceRecord" },
+      "description": "Lesson attendance logs"
+    },
+    "/assignments/{assignmentId}": {
+      "schema": { "$ref": "#/entities/Assignment" },
+      "description": "Homework sheets and graded submissions"
+    },
+    "/testResults/{testId}": {
+      "schema": { "$ref": "#/entities/TestResult" },
+      "description": "Monthly exam scores and feedback"
+    },
+    "/payments/{paymentId}": {
+      "schema": { "$ref": "#/entities/PaymentRecord" },
+      "description": "Tuition invoices and payments"
+    },
+    "/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Communication chat messages"
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/AppNotification" },
+      "description": "Notifications feed"
+    }
+  }
+}

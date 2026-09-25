@@ -45,7 +45,7 @@ export interface Tutor {
   areasCovered?: string[];
   rating: number;
   reviewCount: number;
-  verificationStatus: 'verified' | 'pending' | 'rejected';
+  verificationStatus: 'verified' | 'pending' | 'rejected' | 'blocked';
   bio: string;
   teachingMethodology: string;
   availability: string[];

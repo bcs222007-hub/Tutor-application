@@ -26,12 +26,14 @@ export const ChatModal: React.FC = () => {
   const [inputContent, setInputContent] = useState('');
   const [activePartnerId, setActivePartnerId] = useState<string>('tutor_1');
   const [activePartnerName, setActivePartnerName] = useState<string>('Dr. Farhan Malik');
+  const [mobileView, setMobileView] = useState<'contacts' | 'chat'>('chat');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (chatTargetUser) {
       setActivePartnerId(chatTargetUser.id);
       setActivePartnerName(chatTargetUser.name);
+      setMobileView('chat');
     }
   }, [chatTargetUser]);
 
@@ -66,10 +68,14 @@ export const ChatModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
-      <div className="relative bg-white rounded-3xl shadow-2xl max-w-4xl w-full h-[600px] max-h-[90vh] overflow-hidden border border-slate-200 flex flex-col md:flex-row">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
+      <div className="relative bg-white rounded-3xl shadow-2xl max-w-4xl w-full h-[600px] max-h-[92vh] overflow-hidden border border-slate-200 flex flex-col md:flex-row">
         {/* Left Sidebar: Contact Threads */}
-        <div className="w-full md:w-80 bg-slate-50 border-r border-slate-200 flex flex-col">
+        <div
+          className={`w-full md:w-80 bg-slate-50 border-r border-slate-200 flex flex-col ${
+            mobileView === 'chat' ? 'hidden md:flex' : 'flex flex-1'
+          }`}
+        >
           <div className="p-4 border-b border-slate-200 bg-white flex items-center justify-between">
             <div className="flex items-center gap-2">
               <MessageSquare className="w-5 h-5 text-amber-500" />
@@ -77,7 +83,7 @@ export const ChatModal: React.FC = () => {
             </div>
             <button
               onClick={() => setIsChatModalOpen(false)}
-              className="md:hidden text-slate-400 hover:text-slate-600 p-1"
+              className="text-slate-400 hover:text-slate-600 p-1"
             >
               <X className="w-5 h-5" />
             </button>
@@ -92,6 +98,7 @@ export const ChatModal: React.FC = () => {
                   onClick={() => {
                     setActivePartnerId(contact.id);
                     setActivePartnerName(contact.name);
+                    setMobileView('chat');
                   }}
                   className={`w-full text-left p-3.5 flex items-center gap-3 transition-colors ${
                     isSelected ? 'bg-amber-50/80 border-r-4 border-amber-400' : 'hover:bg-slate-100'
@@ -119,10 +126,20 @@ export const ChatModal: React.FC = () => {
         </div>
 
         {/* Right Area: Chat Window */}
-        <div className="flex-1 flex flex-col bg-white">
+        <div
+          className={`flex-1 flex flex-col bg-white ${
+            mobileView === 'contacts' ? 'hidden md:flex' : 'flex'
+          }`}
+        >
           {/* Active Partner Top Bar */}
-          <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
+          <div className="p-3.5 sm:p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
             <div className="flex items-center gap-3">
+              <button
+                onClick={() => setMobileView('contacts')}
+                className="md:hidden p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-200 text-xs font-semibold"
+              >
+                ← Contacts
+              </button>
               <div className="w-9 h-9 rounded-xl bg-amber-400 text-slate-950 flex items-center justify-center font-bold text-xs">
                 {activePartnerName.charAt(0)}
               </div>

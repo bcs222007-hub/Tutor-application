@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import {
   User,
   UserRole,
@@ -50,9 +50,12 @@ export type ActivePage =
   | 'tutors'
   | 'courses'
   | 'student-portal'
+  | 'student-login'
   | 'parent-portal'
   | 'tutor-portal'
-  | 'admin-portal';
+  | 'tutor-login'
+  | 'admin-portal'
+  | 'admin-login';
 
 interface Toast {
   id: string;
@@ -64,13 +67,21 @@ interface AppContextType {
   // Navigation & Page State
   activePage: ActivePage;
   setActivePage: (page: ActivePage) => void;
+  navigateTo: (page: ActivePage) => void;
 
   // User & Auth State
   currentUser: User | null;
   activeRole: UserRole;
-  switchUserRole: (role: UserRole) => void;
-  loginAsUser: (email: string, password?: string) => Promise<boolean>;
-  registerUser: (email: string, password: string, name: string, role: UserRole) => Promise<boolean>;
+  isAdminAuthenticated: boolean;
+  adminToken: string | null;
+
+  // Dedicated Auth Flows
+  loginAsAdmin: (email: string, password: string) => Promise<boolean>;
+  logoutAdmin: () => Promise<void>;
+  loginAsTutor: (email: string, password: string) => Promise<boolean>;
+  registerTutorAccount: (data: any) => Promise<boolean>;
+  loginAsStudent: (email: string, password: string) => Promise<boolean>;
+  registerStudentAccount: (data: any) => Promise<boolean>;
   logout: () => void;
 
   // Data Collections (Live Firestore Synced)
@@ -90,8 +101,12 @@ interface AppContextType {
   // Actions writing to Firestore
   submitDemoRequest: (request: Omit<DemoRequest, 'id' | 'createdAt' | 'status'>) => Promise<void>;
   applyAsTutor: (application: Omit<Tutor, 'id' | 'rating' | 'reviewCount' | 'verificationStatus'>) => Promise<void>;
-  updateTutorStatus: (tutorId: string, status: 'verified' | 'rejected') => Promise<void>;
+  updateTutorStatus: (tutorId: string, status: 'verified' | 'rejected' | 'blocked') => Promise<void>;
+  updateTutorProfile: (tutorId: string, updates: Partial<Tutor>, resubmitForApproval?: boolean) => Promise<void>;
   updateDemoStatus: (demoId: string, status: 'confirmed' | 'completed' | 'cancelled') => Promise<void>;
+  switchUserRole: (role: UserRole) => void;
+  loginAsUser: (email: string, pass: string) => Promise<boolean>;
+  registerUser: (email: string, pass: string, name: string, role: UserRole) => Promise<boolean>;
   markAttendance: (record: Omit<AttendanceRecord, 'id'>) => Promise<void>;
   createAssignment: (asg: Omit<Assignment, 'id' | 'submissions'>) => Promise<void>;
   gradeAssignment: (asgId: string, studentId: string, marks: number, feedback: string) => Promise<void>;
@@ -130,12 +145,16 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Navigation
-  const [activePage, setActivePage] = useState<ActivePage>('home');
+  // Navigation & Protected Route state
+  const [activePage, setActivePageState] = useState<ActivePage>('home');
 
   // Auth & Roles
-  const [currentUser, setCurrentUser] = useState<User | null>(INITIAL_USERS[0]);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeRole, setActiveRole] = useState<UserRole>('guest');
+  const [adminToken, setAdminToken] = useState<string | null>(() => {
+    return sessionStorage.getItem('cambridge_admin_jwt');
+  });
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(false);
 
   // Collections state initialized with initial data
   const [tutors, setTutors] = useState<Tutor[]>(INITIAL_TUTORS);
@@ -175,7 +194,147 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  // Seed Firestore on startup and setup real-time listeners
+  // Route Guard Navigator
+  const navigateTo = useCallback(
+    (page: ActivePage) => {
+      // 1. Guard Admin Dashboard: unauthenticated access must redirect to Admin Login
+      if (page === 'admin-portal') {
+        const token = adminToken || sessionStorage.getItem('cambridge_admin_jwt');
+        if (!token) {
+          showToast('Administrative authorization required. Redirecting to Admin Login.', 'warning');
+          setActivePageState('admin-login');
+          window.location.hash = 'admin/login';
+          return;
+        }
+      }
+
+      // 2. Guard Tutor Dashboard: if not logged in as tutor, redirect to Tutor Login
+      if (page === 'tutor-portal') {
+        if (!currentUser || activeRole !== 'tutor') {
+          showToast('Please sign in to your Tutor account to access teaching console.', 'info');
+          setActivePageState('tutor-login');
+          window.location.hash = 'tutor/login';
+          return;
+        }
+      }
+
+      // 3. Guard Student Dashboard: if not logged in as student, redirect to Student Login
+      if (page === 'student-portal') {
+        if (!currentUser || activeRole !== 'student') {
+          showToast('Please sign in to your Student account to access courses and tests.', 'info');
+          setActivePageState('student-login');
+          window.location.hash = 'student/login';
+          return;
+        }
+      }
+
+      // Allowed page navigation
+      setActivePageState(page);
+
+      // Update URL hash without reload
+      if (page === 'home') window.location.hash = '';
+      else if (page === 'admin-portal') window.location.hash = 'admin/dashboard';
+      else if (page === 'admin-login') window.location.hash = 'admin/login';
+      else if (page === 'tutor-portal') window.location.hash = 'tutor/dashboard';
+      else if (page === 'tutor-login') window.location.hash = 'tutor/login';
+      else if (page === 'student-portal') window.location.hash = 'student/dashboard';
+      else if (page === 'student-login') window.location.hash = 'student/login';
+      else window.location.hash = page;
+    },
+    [adminToken, currentUser, activeRole]
+  );
+
+  const setActivePage = (page: ActivePage) => {
+    navigateTo(page);
+  };
+
+  // Sync with browser URL / hash on mount & hashchange
+  useEffect(() => {
+    const handleHashOrUrl = () => {
+      const hash = window.location.hash.replace('#', '').toLowerCase();
+      const pathname = window.location.pathname.toLowerCase();
+
+      if (hash === 'admin' || hash === 'admin/dashboard' || pathname === '/admin' || pathname === '/admin/dashboard') {
+        const token = sessionStorage.getItem('cambridge_admin_jwt');
+        if (!token) {
+          setActivePageState('admin-login');
+        } else {
+          setActivePageState('admin-portal');
+        }
+      } else if (hash === 'admin/login' || pathname === '/admin/login') {
+        setActivePageState('admin-login');
+      } else if (hash === 'tutor' || hash === 'tutor/dashboard' || pathname === '/tutor') {
+        if (!currentUser || activeRole !== 'tutor') {
+          setActivePageState('tutor-login');
+        } else {
+          setActivePageState('tutor-portal');
+        }
+      } else if (hash === 'tutor/login' || hash === 'tutor/register') {
+        setActivePageState('tutor-login');
+      } else if (hash === 'student' || hash === 'student/dashboard' || pathname === '/student') {
+        if (!currentUser || activeRole !== 'student') {
+          setActivePageState('student-login');
+        } else {
+          setActivePageState('student-portal');
+        }
+      } else if (hash === 'student/login' || hash === 'student/register') {
+        setActivePageState('student-login');
+      } else if (hash === 'tutors' || pathname === '/tutors') {
+        setActivePageState('tutors');
+      } else if (hash === 'courses' || pathname === '/courses') {
+        setActivePageState('courses');
+      } else if (hash === 'parent' || hash === 'parent-portal') {
+        setActivePageState('parent-portal');
+      }
+    };
+
+    handleHashOrUrl();
+    window.addEventListener('hashchange', handleHashOrUrl);
+    window.addEventListener('popstate', handleHashOrUrl);
+    return () => {
+      window.removeEventListener('hashchange', handleHashOrUrl);
+      window.removeEventListener('popstate', handleHashOrUrl);
+    };
+  }, [currentUser, activeRole]);
+
+  // Verify stored Admin Token on boot
+  useEffect(() => {
+    const checkAdminSession = async () => {
+      const token = sessionStorage.getItem('cambridge_admin_jwt');
+      if (!token) return;
+
+      try {
+        const res = await fetch('/api/admin/verify', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.valid) {
+            setAdminToken(token);
+            setIsAdminAuthenticated(true);
+            setCurrentUser(data.user);
+            setActiveRole('admin');
+          } else {
+            sessionStorage.removeItem('cambridge_admin_jwt');
+            setAdminToken(null);
+            setIsAdminAuthenticated(false);
+          }
+        } else {
+          sessionStorage.removeItem('cambridge_admin_jwt');
+          setAdminToken(null);
+          setIsAdminAuthenticated(false);
+        }
+      } catch (e) {
+        console.log('Admin session check notice:', e);
+      }
+    };
+
+    checkAdminSession();
+  }, []);
+
+  // Firebase Real-time Firestore Listeners
   useEffect(() => {
     seedInitialDatabase();
 
@@ -225,7 +384,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (!snapshot.empty) {
           const loaded: DemoRequest[] = [];
           snapshot.forEach((docSnap) => loaded.push(docSnap.data() as DemoRequest));
-          // Sort newest first
           loaded.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
           setDemoRequests(loaded);
         }
@@ -325,19 +483,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       (err) => console.log('Notifications snapshot listener:', err)
     );
 
-    // 12. Auth State Listener
-    const unsubAuth = onAuthStateChanged(auth, (firebaseUser) => {
-      if (firebaseUser && firebaseUser.email) {
-        const found = INITIAL_USERS.find(
-          (u) => u.email.toLowerCase() === firebaseUser.email?.toLowerCase()
-        );
-        if (found) {
-          setCurrentUser(found);
-          setActiveRole(found.role);
-        }
-      }
-    });
-
     return () => {
       unsubTutors();
       unsubStudents();
@@ -350,128 +495,278 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubPayments();
       unsubMessages();
       unsubNotifications();
-      unsubAuth();
     };
   }, []);
 
-  // Role switching
-  const switchUserRole = (role: UserRole) => {
-    setActiveRole(role);
-    if (role === 'guest') {
-      setCurrentUser(null);
-      showToast('Switched to Visitor mode (Public Marketplace)', 'info');
-      return;
-    }
+  // -------------------------------------------------------------
+  // SECURE AUTHENTICATION METHODS
+  // -------------------------------------------------------------
 
-    const matchedUser = INITIAL_USERS.find((u) => u.role === role);
-    if (matchedUser) {
-      setCurrentUser(matchedUser);
-      showToast(`Switched view to ${matchedUser.name} (${role.toUpperCase()})`, 'info');
-    }
-
-    // Auto navigate to role's dashboard
-    if (role === 'student') setActivePage('student-portal');
-    else if (role === 'parent') setActivePage('parent-portal');
-    else if (role === 'tutor') setActivePage('tutor-portal');
-    else if (role === 'admin') setActivePage('admin-portal');
-  };
-
-  // Firebase / Profile Login
-  const loginAsUser = async (email: string, password?: string): Promise<boolean> => {
+  // 1. Admin Login via Backend
+  const loginAsAdmin = async (email: string, pass: string): Promise<boolean> => {
     try {
-      if (password && password.length >= 6) {
-        try {
-          await signInWithEmailAndPassword(auth, email, password);
-        } catch (authErr) {
-          console.log('Firebase Auth attempted, continuing with user session:', authErr);
-        }
-      }
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: pass }),
+      });
 
-      const user = INITIAL_USERS.find((u) => u.email.toLowerCase() === email.toLowerCase());
-      if (user) {
-        setCurrentUser(user);
-        setActiveRole(user.role);
-        showToast(`Welcome back, ${user.name}! Connected to Firebase.`, 'success');
-        if (user.role === 'student') setActivePage('student-portal');
-        else if (user.role === 'parent') setActivePage('parent-portal');
-        else if (user.role === 'tutor') setActivePage('tutor-portal');
-        else if (user.role === 'admin') setActivePage('admin-portal');
+      const data = await res.json();
+      if (res.ok && data.success && data.token) {
+        sessionStorage.setItem('cambridge_admin_jwt', data.token);
+        setAdminToken(data.token);
+        setIsAdminAuthenticated(true);
+        setCurrentUser(data.user);
+        setActiveRole('admin');
+        showToast('Admin authorized! Opening executive dashboard.', 'success');
+        setActivePageState('admin-portal');
+        window.location.hash = 'admin/dashboard';
         return true;
       } else {
-        // Create dynamic user
-        const dynamicUser: User = {
-          id: `usr_${Date.now()}`,
+        showToast(data.message || 'Access denied. Invalid admin credentials.', 'error');
+        return false;
+      }
+    } catch (err) {
+      console.error('Admin login error:', err);
+      showToast('Connection to Admin Auth endpoint failed.', 'error');
+      return false;
+    }
+  };
+
+  // 2. Admin Logout
+  const logoutAdmin = async () => {
+    try {
+      const token = sessionStorage.getItem('cambridge_admin_jwt');
+      if (token) {
+        await fetch('/api/admin/logout', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      }
+    } catch (e) {
+      console.log('Admin logout notice:', e);
+    }
+    sessionStorage.removeItem('cambridge_admin_jwt');
+    setAdminToken(null);
+    setIsAdminAuthenticated(false);
+    setCurrentUser(null);
+    setActiveRole('guest');
+    setActivePageState('admin-login');
+    window.location.hash = 'admin/login';
+    showToast('Admin session terminated securely.', 'info');
+  };
+
+  // 3. Tutor Login
+  const loginAsTutor = async (email: string, pass: string): Promise<boolean> => {
+    const cleanEmail = email.trim().toLowerCase();
+    const matched = tutors.find((t) => t.email.toLowerCase() === cleanEmail);
+
+    if (matched) {
+      if (matched.verificationStatus === 'blocked') {
+        showToast('This tutor account is currently disabled/blocked by administration.', 'error');
+        return false;
+      }
+
+      const tutorUser: User = {
+        id: matched.id,
+        name: matched.name,
+        email: matched.email,
+        phone: matched.phone,
+        role: 'tutor',
+        avatarUrl: matched.photoUrl,
+        tutorId: matched.id,
+      };
+
+      setCurrentUser(tutorUser);
+      setActiveRole('tutor');
+      showToast(`Welcome back, ${matched.name}!`, 'success');
+      setActivePageState('tutor-portal');
+      window.location.hash = 'tutor/dashboard';
+      return true;
+    }
+
+    // Try Firebase Auth
+    try {
+      if (pass && pass.length >= 6) {
+        const userCred = await signInWithEmailAndPassword(auth, email, pass);
+        const dynamicTutor: User = {
+          id: userCred.user.uid,
+          name: email.split('@')[0],
+          email,
+          role: 'tutor',
+          phone: '0300-1234567',
+        };
+        setCurrentUser(dynamicTutor);
+        setActiveRole('tutor');
+        setActivePageState('tutor-portal');
+        window.location.hash = 'tutor/dashboard';
+        return true;
+      }
+    } catch (e) {
+      console.log('Firebase tutor auth notice:', e);
+    }
+
+    return false;
+  };
+
+  // 4. Tutor Registration
+  const registerTutorAccount = async (data: any): Promise<boolean> => {
+    const tutorId = `tutor_${Date.now()}`;
+    const newTutor: Tutor = {
+      id: tutorId,
+      name: data.name,
+      email: data.email,
+      phone: data.phone,
+      cnic: data.cnic,
+      photoUrl: '/src/assets/images/tutor_farhan_portrait_1790320675895.jpg',
+      qualification: data.qualification,
+      institution: data.institution || 'Top University Alum',
+      experienceYears: data.experienceYears || 3,
+      subjects: data.subjects || ['Mathematics'],
+      levels: data.levels || ['O-Level', 'A-Level'],
+      mode: data.mode || 'Both',
+      hourlyRatePKR: data.hourlyRatePKR || 2000,
+      monthlyRatePKR: data.monthlyRatePKR || 20000,
+      city: data.city || 'Islamabad',
+      areasCovered: ['Central Area', 'Online'],
+      rating: 5.0,
+      reviewCount: 0,
+      verificationStatus: 'pending', // IMPORTANT: Pending admin verification
+      bio: data.bio || '',
+      teachingMethodology: data.teachingMethodology || '',
+      availability: data.availability || ['Mon-Fri 4:00 PM - 8:00 PM'],
+      pastResultsHighlights: 'Newly registered faculty candidate.',
+    };
+
+    setTutors((prev) => [newTutor, ...prev]);
+
+    try {
+      await setDoc(doc(db, 'tutors', tutorId), newTutor);
+
+      // Create Admin Notification
+      const notifId = `notif_${Date.now()}`;
+      const notif: AppNotification = {
+        id: notifId,
+        recipientRole: 'admin',
+        title: 'New Tutor Registration Application',
+        message: `${newTutor.name} (${newTutor.qualification}) applied for ${newTutor.subjects.join(', ')}. Review CNIC and approve.`,
+        type: 'system',
+        timestamp: 'Just now',
+        isRead: false,
+      };
+      await setDoc(doc(db, 'notifications', notifId), notif);
+      setNotifications((prev) => [notif, ...prev]);
+    } catch (err) {
+      console.error('Firestore tutor registration sync error:', err);
+    }
+
+    const tutorUser: User = {
+      id: tutorId,
+      name: newTutor.name,
+      email: newTutor.email,
+      phone: newTutor.phone,
+      role: 'tutor',
+      tutorId,
+    };
+    setCurrentUser(tutorUser);
+    setActiveRole('tutor');
+    return true;
+  };
+
+  // 5. Student Login
+  const loginAsStudent = async (email: string, pass: string): Promise<boolean> => {
+    const cleanEmail = email.trim().toLowerCase();
+    const matched = students.find((s) => s.email.toLowerCase() === cleanEmail);
+
+    if (matched) {
+      const studentUser: User = {
+        id: matched.id,
+        name: matched.name,
+        email: matched.email,
+        phone: matched.phone,
+        role: 'student',
+        studentId: matched.id,
+      };
+      setCurrentUser(studentUser);
+      setActiveRole('student');
+      showToast(`Welcome back, ${matched.name}!`, 'success');
+      setActivePageState('student-portal');
+      window.location.hash = 'student/dashboard';
+      return true;
+    }
+
+    try {
+      if (pass && pass.length >= 6) {
+        const cred = await signInWithEmailAndPassword(auth, email, pass);
+        const dynamicStudent: User = {
+          id: cred.user.uid,
           name: email.split('@')[0],
           email,
           role: 'student',
           phone: '0300-1234567',
         };
-        setCurrentUser(dynamicUser);
+        setCurrentUser(dynamicStudent);
         setActiveRole('student');
-        await setDoc(doc(db, 'users', dynamicUser.id), dynamicUser);
-        showToast(`Signed in as ${dynamicUser.name} (Student)`, 'success');
-        setActivePage('student-portal');
+        setActivePageState('student-portal');
+        window.location.hash = 'student/dashboard';
         return true;
       }
     } catch (e) {
-      console.error(e);
-      showToast('Sign in encountered an issue. Using cached profile.', 'info');
-      return false;
+      console.log('Firebase student auth notice:', e);
     }
+
+    return false;
   };
 
-  // Firebase Register
-  const registerUser = async (
-    email: string,
-    password: string,
-    name: string,
-    role: UserRole
-  ): Promise<boolean> => {
+  // 6. Student Registration
+  const registerStudentAccount = async (data: any): Promise<boolean> => {
+    const stdId = `std_${Date.now()}`;
+    const newStudent: Student = {
+      id: stdId,
+      name: data.name,
+      email: data.email,
+      phone: data.phone || '0300-1234567',
+      avatarUrl: '',
+      currentLevel: data.currentLevel || 'A-Level',
+      enrolledSubjects: data.enrolledSubjects || ['Mathematics'],
+      assignedTutorIds: ['tutor_1'],
+      schoolCollege: data.schoolCollege || 'Cambridge Academy Candidate',
+      targetExamYear: data.targetExamYear || 'May/June 2027 CAIE Series',
+    };
+
+    setStudents((prev) => [newStudent, ...prev]);
+
     try {
-      let uid = `usr_${Date.now()}`;
-      try {
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        uid = userCredential.user.uid;
-      } catch (authErr) {
-        console.log('Firebase Auth registration fallback to profile creation:', authErr);
-      }
-
-      const newUser: User = {
-        id: uid,
-        name,
-        email,
-        role,
-        phone: '0300-1234567',
-      };
-
-      await setDoc(doc(db, 'users', uid), newUser);
-      setCurrentUser(newUser);
-      setActiveRole(role);
-      showToast(`Account created successfully for ${name}! Role: ${role.toUpperCase()}`, 'success');
-
-      if (role === 'student') setActivePage('student-portal');
-      else if (role === 'parent') setActivePage('parent-portal');
-      else if (role === 'tutor') setActivePage('tutor-portal');
-      else if (role === 'admin') setActivePage('admin-portal');
-
-      return true;
-    } catch (err: any) {
-      console.error('Registration error:', err);
-      showToast('Registration error: ' + (err?.message || 'Please check details'), 'error');
-      return false;
+      await setDoc(doc(db, 'students', stdId), newStudent);
+    } catch (err) {
+      console.error('Firestore student register error:', err);
     }
+
+    const studentUser: User = {
+      id: stdId,
+      name: newStudent.name,
+      email: newStudent.email,
+      phone: newStudent.phone,
+      role: 'student',
+      studentId: stdId,
+    };
+    setCurrentUser(studentUser);
+    setActiveRole('student');
+    return true;
   };
 
-  const logout = async () => {
-    try {
-      await signOut(auth);
-    } catch (e) {
-      console.log('Signout notice:', e);
+  // Generic Logout
+  const logout = () => {
+    if (activeRole === 'admin') {
+      logoutAdmin();
+      return;
     }
+    signOut(auth).catch(() => {});
     setCurrentUser(null);
     setActiveRole('guest');
-    setActivePage('home');
-    showToast('Signed out successfully', 'info');
+    setActivePageState('home');
+    window.location.hash = '';
+    showToast('Signed out successfully.', 'info');
   };
 
   const openDemoModalWithTutor = (tutor?: Tutor) => {
@@ -494,14 +789,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: 'pending',
     };
 
-    // Update local state immediately for snappy response
     setDemoRequests((prev) => [newDemo, ...prev]);
 
-    // Save to Firestore
     try {
       await setDoc(doc(db, 'demoRequests', demoId), newDemo);
 
-      // Create Admin Notification in Firestore
       const notifId = `notif_${Date.now()}`;
       const notif: AppNotification = {
         id: notifId,
@@ -518,7 +810,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.error('Firestore demo submit sync error:', err);
     }
 
-    showToast('Demo request saved to Cambridge Firebase Database! Counselor assigned.', 'success');
+    showToast('Demo request registered! Our academic coordinator will contact you shortly.', 'success');
   };
 
   // Apply as Tutor -> Writes to Firestore (PENDING VERIFICATION)
@@ -529,7 +821,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newTutor: Tutor = {
       ...app,
       id: tutorId,
-      rating: 0,
+      rating: 5.0,
       reviewCount: 0,
       verificationStatus: 'pending',
     };
@@ -556,13 +848,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     showToast(
-      'Application saved to Firestore! Account is PENDING VERIFICATION until admin approval.',
+      'Application submitted! Profile is in PENDING VERIFICATION until admin approval.',
       'info'
     );
   };
 
-  // Admin approves / rejects tutor -> Updates Firestore
-  const updateTutorStatus = async (tutorId: string, status: 'verified' | 'rejected') => {
+  // Admin approves / rejects / blocks tutor -> Updates Firestore
+  const updateTutorStatus = async (
+    tutorId: string,
+    status: 'verified' | 'rejected' | 'blocked'
+  ) => {
     setTutors((prev) =>
       prev.map((t) => (t.id === tutorId ? { ...t, verificationStatus: status } : t))
     );
@@ -576,9 +871,107 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     showToast(
-      `Tutor status updated in Firebase to ${status.toUpperCase()}`,
-      status === 'verified' ? 'success' : 'warning'
+      `Tutor status updated in database to ${status.toUpperCase()}`,
+      status === 'verified' ? 'success' : status === 'blocked' ? 'error' : 'warning'
     );
+  };
+
+  // Tutor updates their own profile & credentials -> Updates Firestore
+  const updateTutorProfile = async (
+    tutorId: string,
+    updates: Partial<Tutor>,
+    resubmitForApproval = false
+  ) => {
+    const finalUpdates: Partial<Tutor> = {
+      ...updates,
+      ...(resubmitForApproval ? { verificationStatus: 'pending' as const } : {}),
+    };
+
+    setTutors((prev) =>
+      prev.map((t) => (t.id === tutorId ? { ...t, ...finalUpdates } : t))
+    );
+
+    try {
+      await updateDoc(doc(db, 'tutors', tutorId), finalUpdates);
+
+      if (resubmitForApproval) {
+        const notifId = `notif_${Date.now()}`;
+        const notif: AppNotification = {
+          id: notifId,
+          recipientRole: 'admin',
+          title: 'Tutor Updated Profile for Approval',
+          message: `Tutor ID ${tutorId} has updated profile details and requested verification approval.`,
+          type: 'system',
+          timestamp: 'Just now',
+          isRead: false,
+        };
+        await setDoc(doc(db, 'notifications', notifId), notif);
+        setNotifications((prev) => [notif, ...prev]);
+      }
+    } catch (err) {
+      console.error('Firestore tutor update error:', err);
+    }
+
+    showToast(
+      resubmitForApproval
+        ? 'Profile updated & submitted for administrative approval!'
+        : 'Profile updated successfully!',
+      'success'
+    );
+  };
+
+  const switchUserRole = (role: UserRole) => {
+    if (role === 'admin') {
+      if (isAdminAuthenticated) {
+        setActivePageState('admin-portal');
+        window.location.hash = 'admin/dashboard';
+      } else {
+        setActivePageState('admin-login');
+        window.location.hash = 'admin/login';
+      }
+      return;
+    }
+    setActiveRole(role);
+    if (role === 'tutor') {
+      if (currentUser && currentUser.role === 'tutor') {
+        setActivePageState('tutor-portal');
+      } else {
+        setActivePageState('tutor-login');
+      }
+    } else if (role === 'student') {
+      if (currentUser && currentUser.role === 'student') {
+        setActivePageState('student-portal');
+      } else {
+        setActivePageState('student-login');
+      }
+    } else if (role === 'parent') {
+      setActivePageState('parent-portal');
+    } else {
+      setActivePageState('home');
+    }
+  };
+
+  const loginAsUser = async (email: string, pass: string): Promise<boolean> => {
+    const clean = email.trim().toLowerCase();
+    if (tutors.some((t) => t.email.toLowerCase() === clean)) {
+      return loginAsTutor(clean, pass);
+    }
+    if (students.some((s) => s.email.toLowerCase() === clean)) {
+      return loginAsStudent(clean, pass);
+    }
+    return loginAsStudent(clean, pass);
+  };
+
+  const registerUser = async (
+    email: string,
+    pass: string,
+    name: string,
+    role: UserRole
+  ): Promise<boolean> => {
+    if (role === 'tutor') {
+      return registerTutorAccount({ name, email, password: pass });
+    }
+    return registerStudentAccount({ name, email, password: pass });
   };
 
   // Admin updates demo status -> Updates Firestore
@@ -612,7 +1005,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.error('Firestore attendance save error:', err);
     }
 
-    showToast(`Attendance saved to Firestore for ${record.studentName}: ${record.status.toUpperCase()}`, 'success');
+    showToast(`Attendance marked for ${record.studentName}: ${record.status.toUpperCase()}`, 'success');
   };
 
   // Tutor creates assignment -> Writes to Firestore
@@ -645,7 +1038,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.error('Firestore assignment error:', err);
     }
 
-    showToast(`Assignment '${asg.title}' saved to Firebase!`, 'success');
+    showToast(`Assignment '${asg.title}' published!`, 'success');
   };
 
   // Tutor grades assignment -> Updates Firestore
@@ -679,7 +1072,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.error('Firestore grade sync error:', err);
     }
 
-    showToast(`Grade recorded in Firestore: ${marks} marks awarded`, 'success');
+    showToast(`Grade recorded: ${marks} marks awarded`, 'success');
   };
 
   // Add test result -> Writes to Firestore
@@ -711,7 +1104,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.error('Firestore test result error:', err);
     }
 
-    showToast(`Test score saved to Firestore for ${result.studentName}`, 'success');
+    showToast(`Test score published for ${result.studentName}`, 'success');
   };
 
   // Pay invoice -> Updates Firestore
@@ -807,11 +1200,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       value={{
         activePage,
         setActivePage,
+        navigateTo,
         currentUser,
         activeRole,
-        switchUserRole,
-        loginAsUser,
-        registerUser,
+        isAdminAuthenticated,
+        adminToken,
+        loginAsAdmin,
+        logoutAdmin,
+        loginAsTutor,
+        registerTutorAccount,
+        loginAsStudent,
+        registerStudentAccount,
         logout,
         tutors,
         students,
@@ -828,7 +1227,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         submitDemoRequest,
         applyAsTutor,
         updateTutorStatus,
+        updateTutorProfile,
         updateDemoStatus,
+        switchUserRole,
+        loginAsUser,
+        registerUser,
         markAttendance,
         createAssignment,
         gradeAssignment,

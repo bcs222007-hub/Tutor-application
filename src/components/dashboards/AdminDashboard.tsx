@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { AdminLoginPage } from '../auth/AdminLoginPage';
 import {
   ShieldCheck,
   Users,
@@ -16,10 +17,16 @@ import {
   Search,
   ExternalLink,
   Sparkles,
+  Ban,
+  Eye,
+  LogOut,
+  AlertTriangle,
 } from 'lucide-react';
 
 export const AdminDashboard: React.FC = () => {
   const {
+    isAdminAuthenticated,
+    logoutAdmin,
     tutors,
     students,
     courses,
@@ -28,10 +35,16 @@ export const AdminDashboard: React.FC = () => {
     payments,
     updateTutorStatus,
     updateDemoStatus,
+    setSelectedTutorDetail,
     showToast,
   } = useApp();
 
+  if (!isAdminAuthenticated) {
+    return <AdminLoginPage />;
+  }
+
   const [activeTab, setActiveTab] = useState<'overview' | 'demos' | 'tutors' | 'students' | 'payments'>('overview');
+  const [tutorFilterStatus, setTutorFilterStatus] = useState<'all' | 'pending' | 'verified' | 'rejected' | 'blocked'>('all');
   const [searchFilter, setSearchFilter] = useState('');
 
   // Computations
@@ -39,9 +52,24 @@ export const AdminDashboard: React.FC = () => {
   const totalTutors = tutors.length;
   const verifiedTutorsCount = tutors.filter((t) => t.verificationStatus === 'verified').length;
   const pendingTutorApps = tutors.filter((t) => t.verificationStatus === 'pending');
+  const blockedTutorsCount = tutors.filter((t) => t.verificationStatus === 'blocked').length;
   const pendingDemos = demoRequests.filter((d) => d.status === 'pending');
   const totalRevenuePKR = payments.reduce((acc, p) => acc + (p.status === 'paid' ? p.paidAmountPKR : 0), 0);
   const pendingRevenuePKR = payments.reduce((acc, p) => acc + (p.status === 'pending' ? p.amountPKR : 0), 0);
+
+  // Filtered tutors
+  const filteredTutors = tutors.filter((t) => {
+    const matchesStatus =
+      tutorFilterStatus === 'all' ? true : t.verificationStatus === tutorFilterStatus;
+    const matchesSearch =
+      searchFilter.trim() === ''
+        ? true
+        : t.name.toLowerCase().includes(searchFilter.toLowerCase()) ||
+          t.qualification.toLowerCase().includes(searchFilter.toLowerCase()) ||
+          t.subjects.some((s) => s.toLowerCase().includes(searchFilter.toLowerCase())) ||
+          (t.cnic && t.cnic.includes(searchFilter));
+    return matchesStatus && matchesSearch;
+  });
 
   return (
     <div className="py-8 bg-slate-50 min-h-screen">
@@ -355,87 +383,176 @@ export const AdminDashboard: React.FC = () => {
         {/* TAB 3: TUTORS MANAGEMENT */}
         {activeTab === 'tutors' && (
           <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-5">
               <div>
-                <h3 className="text-lg font-bold text-slate-900">Faculty Registry & Approvals</h3>
+                <h3 className="text-lg font-bold text-slate-900">Faculty Registry & Verification Control</h3>
                 <p className="text-xs text-slate-500">
-                  Approved faculty appear publicly on the Tutor Marketplace.
+                  Screen credentials, review CNIC / degrees, approve faculty, and manage account statuses.
                 </p>
+              </div>
+
+              {/* Tutor Search */}
+              <div className="relative w-full md:w-72">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search by name, subject, CNIC..."
+                  value={searchFilter}
+                  onChange={(e) => setSearchFilter(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 text-xs rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:border-amber-400"
+                />
               </div>
             </div>
 
-            <div className="divide-y divide-slate-200">
-              {tutors.map((tutor) => (
-                <div
-                  key={tutor.id}
-                  className="py-4 flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs"
+            {/* Filter Sub-Tabs */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs font-semibold">
+              {[
+                { id: 'all', label: `All Faculty (${tutors.length})` },
+                { id: 'pending', label: `Pending Approval (${pendingTutorApps.length})` },
+                { id: 'verified', label: `Verified Active (${verifiedTutorsCount})` },
+                { id: 'blocked', label: `Blocked / Disabled (${blockedTutorsCount})` },
+              ].map((subTab) => (
+                <button
+                  key={subTab.id}
+                  onClick={() => setTutorFilterStatus(subTab.id as any)}
+                  className={`px-3 py-1.5 rounded-lg transition-all whitespace-nowrap ${
+                    tutorFilterStatus === subTab.id
+                      ? 'bg-amber-400 text-slate-950 font-bold shadow-xs'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
                 >
-                  <div className="flex items-center gap-4">
-                    <img
-                      src={tutor.photoUrl}
-                      alt={tutor.name}
-                      referrerPolicy="no-referrer"
-                      className="w-12 h-12 rounded-xl object-cover border border-slate-300"
-                    />
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-2">
-                        <h4 className="text-sm font-bold text-slate-900">{tutor.name}</h4>
-                        <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                            tutor.verificationStatus === 'verified'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : tutor.verificationStatus === 'pending'
-                              ? 'bg-amber-100 text-amber-800'
-                              : 'bg-rose-100 text-rose-800'
-                          }`}
-                        >
-                          {tutor.verificationStatus}
-                        </span>
-                      </div>
-                      <p className="text-slate-600">
-                        {tutor.qualification} · {tutor.institution}
-                      </p>
-                      <p className="text-slate-500 font-mono">
-                        {tutor.subjects.join(', ')} · Rate: PKR {tutor.hourlyRatePKR}/hr · Contact: {tutor.phone}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    {tutor.verificationStatus === 'pending' ? (
-                      <>
-                        <button
-                          onClick={() => updateTutorStatus(tutor.id, 'verified')}
-                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-sm"
-                        >
-                          Approve Faculty
-                        </button>
-                        <button
-                          onClick={() => updateTutorStatus(tutor.id, 'rejected')}
-                          className="px-3 py-1.5 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 font-bold text-xs rounded-lg"
-                        >
-                          Reject
-                        </button>
-                      </>
-                    ) : tutor.verificationStatus === 'verified' ? (
-                      <button
-                        onClick={() => updateTutorStatus(tutor.id, 'rejected')}
-                        className="px-3 py-1 text-slate-500 hover:text-rose-600 text-xs font-semibold"
-                      >
-                        Revoke Verification
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => updateTutorStatus(tutor.id, 'verified')}
-                        className="px-3 py-1.5 bg-emerald-600 text-white font-bold text-xs rounded-lg"
-                      >
-                        Re-Approve
-                      </button>
-                    )}
-                  </div>
-                </div>
+                  {subTab.label}
+                </button>
               ))}
             </div>
+
+            {/* Tutor List */}
+            {filteredTutors.length === 0 ? (
+              <div className="py-12 text-center text-xs text-slate-400">
+                No faculty members match the current filter or search criteria.
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {filteredTutors.map((tutor) => (
+                  <div
+                    key={tutor.id}
+                    className="py-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4 text-xs hover:bg-slate-50/70 p-3 rounded-2xl transition-colors"
+                  >
+                    <div className="flex items-start gap-4">
+                      <img
+                        src={tutor.photoUrl}
+                        alt={tutor.name}
+                        referrerPolicy="no-referrer"
+                        className="w-14 h-14 rounded-2xl object-cover border border-slate-300 shrink-0"
+                      />
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="text-sm font-bold text-slate-900">{tutor.name}</h4>
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                              tutor.verificationStatus === 'verified'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : tutor.verificationStatus === 'pending'
+                                ? 'bg-amber-100 text-amber-800'
+                                : tutor.verificationStatus === 'blocked'
+                                ? 'bg-rose-950 text-rose-300'
+                                : 'bg-rose-100 text-rose-800'
+                            }`}
+                          >
+                            {tutor.verificationStatus}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            ID: {tutor.id}
+                          </span>
+                        </div>
+                        <p className="text-slate-600 font-medium">
+                          {tutor.qualification} · {tutor.institution} ({tutor.experienceYears}+ years exp)
+                        </p>
+                        <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500 font-mono">
+                          <span>CNIC: <strong className="text-slate-700">{tutor.cnic || 'Under verification'}</strong></span>
+                          <span>·</span>
+                          <span>Phone: {tutor.phone}</span>
+                          <span>·</span>
+                          <span>PKR {tutor.hourlyRatePKR}/hr</span>
+                          <span>·</span>
+                          <span>Mode: {tutor.mode}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {tutor.subjects.map((sub, idx) => (
+                            <span
+                              key={idx}
+                              className="px-2 py-0.5 rounded bg-blue-50 text-blue-800 text-[10px] font-semibold"
+                            >
+                              {sub}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 self-start lg:self-center shrink-0">
+                      {/* View Profile Details */}
+                      <button
+                        onClick={() => setSelectedTutorDetail(tutor)}
+                        className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs rounded-xl flex items-center gap-1 transition-colors"
+                        title="View comprehensive tutor dossier"
+                      >
+                        <Eye className="w-3.5 h-3.5 text-slate-600" />
+                        <span>View Details</span>
+                      </button>
+
+                      {/* Status Action Buttons */}
+                      {tutor.verificationStatus === 'pending' && (
+                        <>
+                          <button
+                            onClick={() => updateTutorStatus(tutor.id, 'verified')}
+                            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm transition-colors flex items-center gap-1"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Approve</span>
+                          </button>
+                          <button
+                            onClick={() => updateTutorStatus(tutor.id, 'rejected')}
+                            className="px-3 py-1.5 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 font-bold text-xs rounded-xl transition-colors"
+                          >
+                            Reject
+                          </button>
+                        </>
+                      )}
+
+                      {tutor.verificationStatus === 'verified' && (
+                        <>
+                          <button
+                            onClick={() => updateTutorStatus(tutor.id, 'blocked')}
+                            className="px-3 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-900 text-xs font-semibold rounded-xl flex items-center gap-1 transition-colors"
+                            title="Block or disable tutor from platform"
+                          >
+                            <Ban className="w-3.5 h-3.5 text-rose-700" />
+                            <span>Block / Disable</span>
+                          </button>
+                          <button
+                            onClick={() => updateTutorStatus(tutor.id, 'rejected')}
+                            className="px-2.5 py-1.5 text-slate-400 hover:text-slate-600 text-xs"
+                          >
+                            Revoke
+                          </button>
+                        </>
+                      )}
+
+                      {(tutor.verificationStatus === 'rejected' || tutor.verificationStatus === 'blocked') && (
+                        <button
+                          onClick={() => updateTutorStatus(tutor.id, 'verified')}
+                          className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm transition-colors flex items-center gap-1"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Re-Approve & Unblock</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

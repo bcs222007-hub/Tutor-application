@@ -3,70 +3,138 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions
-    function isAuthenticated() {
+    // Default deny all unknown collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Common Helpers
+    function isSignedIn() {
       return request.auth != null;
     }
 
     function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+      return isSignedIn() && request.auth.uid == userId;
     }
 
-    // Public read for verified tutors and courses so prospective students/parents can browse
+    // Admin check: either exists in admins collection or has admin claim or is configured admin email
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        request.auth.token.email == 'admin@cambridgetutoracademy.com' ||
+        request.auth.token.email == 'bcs222007@myu.edu.pk' ||
+        request.auth.token.role == 'admin'
+      );
+    }
+
+    // 1. Users collection
+    match /users/{userId} {
+      allow get: if isSignedIn() && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isSignedIn() && (isOwner(userId) || isAdmin());
+      allow update: if isSignedIn() && (isOwner(userId) || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // 2. Admins collection
+    match /admins/{adminId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // 3. Tutors collection
     match /tutors/{tutorId} {
-      allow read: if true;
-      allow create: if true; // Allows prospective tutors to submit application
-      allow update, delete: if isAuthenticated();
+      // Public can read verified tutors to find mentors
+      allow get: if true;
+      allow list: if true;
+      // New tutors can submit their registration application (pending verification)
+      allow create: if isSignedIn() || request.resource.data.verificationStatus == 'pending';
+      // Tutors can update their own profile details, but only admin can change verification status
+      allow update: if isAdmin() || (
+        isSignedIn() && (
+          isOwner(tutorId) || request.auth.uid == resource.data.userId
+        ) && (
+          request.resource.data.verificationStatus == resource.data.verificationStatus || isAdmin()
+        )
+      );
+      allow delete: if isAdmin();
     }
 
+    // 4. Students collection
+    match /students/{studentId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    // 5. Courses collection
     match /courses/{courseId} {
       allow read: if true;
-      allow write: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
+    // 6. Demo Requests collection
     match /demoRequests/{demoId} {
-      allow create: if true; // Public demo request booking
-      allow read, update, delete: if true; // Admin/tutor coordination
+      allow create: if true; // Public demo requests
+      allow read: if isSignedIn();
+      allow update, delete: if isAdmin() || isSignedIn();
     }
 
-    match /users/{userId} {
-      allow read, write: if true; // Supports role-based profiles and guest preview
-    }
-
-    match /students/{studentId} {
-      allow read, write: if true;
-    }
-
+    // 7. Scheduled Classes collection
     match /scheduledClasses/{classId} {
-      allow read, write: if true;
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
     }
 
+    // 8. Attendance collection
     match /attendance/{attendanceId} {
-      allow read, write: if true;
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
     }
 
+    // 9. Assignments collection
     match /assignments/{assignmentId} {
-      allow read, write: if true;
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
     }
 
-    match /testResults/{resultId} {
-      allow read, write: if true;
+    // 10. Test Results collection
+    match /testResults/{testId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
     }
 
+    // 11. Payments collection
     match /payments/{paymentId} {
-      allow read, write: if true;
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
     }
 
+    // 12. Messages collection
     match /messages/{messageId} {
-      allow read, write: if true;
+      allow read: if isSignedIn() && (
+        resource.data.senderId == request.auth.uid ||
+        resource.data.recipientId == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isAdmin();
     }
 
+    // 13. Notifications collection
     match /notifications/{notificationId} {
-      allow read, write: if true;
-    }
-
-    match /{document=**} {
-      allow read, write: if true;
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() || true;
+      allow update: if isSignedIn();
+      allow delete: if isAdmin();
     }
   }
 }
