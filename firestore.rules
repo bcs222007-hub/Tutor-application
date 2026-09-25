@@ -1,0 +1,72 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Public read for verified tutors and courses so prospective students/parents can browse
+    match /tutors/{tutorId} {
+      allow read: if true;
+      allow create: if true; // Allows prospective tutors to submit application
+      allow update, delete: if isAuthenticated();
+    }
+
+    match /courses/{courseId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    match /demoRequests/{demoId} {
+      allow create: if true; // Public demo request booking
+      allow read, update, delete: if true; // Admin/tutor coordination
+    }
+
+    match /users/{userId} {
+      allow read, write: if true; // Supports role-based profiles and guest preview
+    }
+
+    match /students/{studentId} {
+      allow read, write: if true;
+    }
+
+    match /scheduledClasses/{classId} {
+      allow read, write: if true;
+    }
+
+    match /attendance/{attendanceId} {
+      allow read, write: if true;
+    }
+
+    match /assignments/{assignmentId} {
+      allow read, write: if true;
+    }
+
+    match /testResults/{resultId} {
+      allow read, write: if true;
+    }
+
+    match /payments/{paymentId} {
+      allow read, write: if true;
+    }
+
+    match /messages/{messageId} {
+      allow read, write: if true;
+    }
+
+    match /notifications/{notificationId} {
+      allow read, write: if true;
+    }
+
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

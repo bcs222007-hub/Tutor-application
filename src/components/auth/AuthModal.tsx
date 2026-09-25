@@ -15,26 +15,37 @@ import {
 } from 'lucide-react';
 
 export const AuthModal: React.FC = () => {
-  const { isAuthModalOpen, setIsAuthModalOpen, loginAsUser, switchUserRole } = useApp();
+  const { isAuthModalOpen, setIsAuthModalOpen, loginAsUser, registerUser, switchUserRole } = useApp();
 
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [selectedRole, setSelectedRole] = useState<UserRole>('student');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [loading, setLoading] = useState(false);
 
   if (!isAuthModalOpen) return null;
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email) return;
-    const ok = loginAsUser(email);
-    if (ok) {
-      setIsAuthModalOpen(false);
+    if (!email || !password) return;
+    setLoading(true);
+
+    if (mode === 'register') {
+      const success = await registerUser(email, password, name || email.split('@')[0], selectedRole);
+      setLoading(false);
+      if (success) {
+        setIsAuthModalOpen(false);
+      }
     } else {
-      // Default to the selected role
-      switchUserRole(selectedRole);
-      setIsAuthModalOpen(false);
+      const ok = await loginAsUser(email, password);
+      setLoading(false);
+      if (ok) {
+        setIsAuthModalOpen(false);
+      } else {
+        switchUserRole(selectedRole);
+        setIsAuthModalOpen(false);
+      }
     }
   };
 
@@ -186,9 +197,14 @@ export const AuthModal: React.FC = () => {
 
           <button
             type="submit"
-            className="w-full py-3 bg-[#0f2b5c] hover:bg-[#0c234a] text-white font-bold text-xs rounded-xl shadow-sm transition-colors mt-2"
+            disabled={loading}
+            className="w-full py-3 bg-[#0f2b5c] hover:bg-[#0c234a] disabled:opacity-60 text-white font-bold text-xs rounded-xl shadow-sm transition-colors mt-2"
           >
-            {mode === 'login' ? `Sign In as ${selectedRole.toUpperCase()}` : 'Create Account'}
+            {loading
+              ? 'Connecting to Firebase...'
+              : mode === 'login'
+              ? `Sign In as ${selectedRole.toUpperCase()}`
+              : 'Create Account'}
           </button>
 
           <div className="text-center pt-2 text-slate-500">
