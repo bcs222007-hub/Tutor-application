@@ -1,0 +1,6 @@
+{
+  "name": "Cambridge Tutors - Tutoring Academy Platform",
+  "description": "Premium online and home tutoring academy platform for IGCSE, O/A-Levels, 9th, 10th, 1st & 2nd Year students with multi-role dashboards for students, parents, tutors, and administrators.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
